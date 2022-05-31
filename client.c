@@ -208,12 +208,112 @@ int main (int argc, char *argv[])
     //       single data packet, and then tears down the connection without
     //       handling data loss.
     //       Only for demo purpose. DO NOT USE IT in your final submission
+
+    //still has content left to send
+
     while (1) {
-        n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *) &servaddr, (socklen_t *) &servaddrlen);
-        if (n > 0) {
+        //while not full
+        while (!feof(fp) && full == 0){
+            //printf("%d", 1);
+            m = fread(buf, 1, PAYLOAD_SIZE, fp);
+            seqNum = (seqNum + m) % MAX_SEQN;
+            buildPkt(&pkts[e], seqNum, 0, 0, 0, 0, 0, m, buf);
+            // printf("Ack bit is: %d\n", pkts[e].acknum);
+            //m here or packetsize?
+            sendto(sockfd, &pkts[e], m, 0, (struct sockaddr*) &servaddr, servaddrlen);
+            printSend(&pkts[e], 0);
+            e = (e + 1) % WND_SIZE;
+            if (s == e){
+                full = 1;
+            }
+            // printf("S is: %d\n", s);
+            // printf("E is: %d\n", e);
+            // printf("full is: %d\n", full);
+            // printf("size is: %d\n", m);
+        }
+
+        //ack incoming packets next
+        while (1){
+            // printf("%d", 2);
+            n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *) &servaddr, (socklen_t *) &servaddrlen);
+            printRecv(&ackpkt);
+            if (n > 0){
+                if (ackpkt.acknum == (pkts[s].seqnum + pkts[s].length) % MAX_SEQN){
+                    //free first pkt in window
+                    s = (s + 1) % WND_SIZE;
+                    full = 0;
+                    // printf("S is: %d\n", s);
+                    // printf("E is: %d\n", e);
+                    // printf("full is: %d\n", full);
+                    // printf("size2 is: %d\n", m);
+                    //printf("End of File: %d\n", feof(fp));
+                    break;
+                }
+            }
+            printf("last sent is: %d\n", pkts[s].seqnum + pkts[s].length);
+            printf("acknum is: %d\n", ackpkt.acknum);
+            printf("____________________________________________\n");
+            // printf("S is: %d\n", s);
+            // printf("E is: %d\n", e);
+            //printf("full is: %d\n", full);
+            // printf("size is: %d\n", m);
+            // printf("End of File: %d\n", feof(fp));
+        }
+        // printf("Last Sent Is: %d\n", pkts[(e - 1) % WND_SIZE].seqnum);
+        // printf("Current Received: %d\n", ackpkt.acknum);
+        // if (ackpkt.acknum == (pkts[(e - 1) % WND_SIZE].seqnum + pkts[(e - 1) % WND_SIZE].length)){
+        //     break;
+        // }
+        if (s == e && full == 0){
             break;
         }
+
     }
+
+    printf("%s\n", "after while");
+
+    // while (1) {
+    //     //while still has content left to send and not full
+    //     while (m == PAYLOAD_SIZE && full == 0){
+    //         //printf("%d", 1);
+    //         m = fread(buf, 1, PAYLOAD_SIZE, fp);
+    //         seqNum = (seqNum + m) % MAX_SEQN;
+    //         buildPkt(&pkts[e], seqNum, 0, 0, 0, 0, 0, m, buf);
+    //         sendto(sockfd, &pkts[e], m, 0, (struct sockaddr*) &servaddr, servaddrlen);
+    //         printSend(&pkts[e], 0);
+    //         e = (e + 1) % WND_SIZE;
+    //         if (s == e){
+    //             full = 1;
+    //         }
+    //     }
+
+    //     //ack incoming packets next
+    //     while (1){
+    //         printf("%d", 2);
+    //         n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *) &servaddr, (socklen_t *) &servaddrlen);
+    //         printRecv(&ackpkt);
+    //         if (n > 0){
+    //             if (ackpkt.acknum == (pkts[s].seqnum + pkts[s].length)){
+    //                 //free first pkt in window
+    //                 s = (s + 1) % WND_SIZE;
+    //                 full = 0;
+    //                 break;
+    //             }
+    //         }
+    //     }
+
+    //     if (ackpkt.acknum == (pkts[e].seqnum + pkts[e].length)){
+    //         break;
+    //     }
+
+    // }
+
+    // while (1) {
+    //     n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *) &servaddr, (socklen_t *) &servaddrlen);
+    //     if (n > 0) {
+    //         break;
+    //     }
+    // }
 
     // *** End of your client implementation ***
     fclose(fp);

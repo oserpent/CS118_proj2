@@ -1,0 +1,19 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <fcntl.h>
+#include <netdb.h> 
+
+// =====================================
+
+#define RTO 500000 /* timeout in microseconds */
+#define HDR_SIZE 12 /* header size*/
+#define PKT_SIZE 524 /* total packet size */
+#define PAYLOAD_SIZE 512 /* PKT_SIZE - HDR_SIZE */
+#define WND_SIZE 10 /* window size*

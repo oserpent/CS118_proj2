@@ -147,11 +147,13 @@ int main (int argc, char *argv[])
             sendto(sockfd, &synackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
             
             while(1) {
+                //ackpacket is supposed response to synack
                 n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t *) &cliaddrlen);
                 if (n > 0) {
                     printRecv(&ackpkt);
+                    //if statement signifies that connection is completed: server acknowledges client seq num and client acknowledges server seq num
                     if (ackpkt.seqnum == cliSeqNum && ackpkt.ack && ackpkt.acknum == (synackpkt.seqnum + 1) % MAX_SEQN) {
-
+                        //length = length of i + 6 (".file" + nullbyte)
                         int length = snprintf(NULL, 0, "%d", i) + 6;
                         char* filename = malloc(length);
                         snprintf(filename, length, "%d.file", i);
@@ -171,16 +173,25 @@ int main (int argc, char *argv[])
                         buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                         printSend(&ackpkt, 0);
                         sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
-
+                        //breaks if ack to synack successfully received => handshake complete
                         break;
                     }
+                    //sending another synack in case of packet loss of original synack packet
                     else if (ackpkt.syn) {
+                        //has dupack bit turned on
                         buildPkt(&synackpkt, seqNum, (synpkt.seqnum + 1) % MAX_SEQN, 1, 0, 0, 1, 0, NULL);
+                        //breaks after sending duplicate synack due to original synack packet loss
                         break;
                     }
                 }
             }
-
+            //this break is for the if condition of the inner while loop
+            
+            //ackpkt.syn means that ackpkt is a syn and so ack to synack is not received
+            //!ackpkt.syn means that ackpkt is not a syn and so ack to synack is received
+            //if ack to synack is received, then break
+            //if ack to synack is not received, then continue outer loop
+            //outer loop means we send another synack
             if (! ackpkt.syn)
                 break;
         }
@@ -197,7 +208,12 @@ int main (int argc, char *argv[])
         while(1) {
             n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t *) &cliaddrlen);
             if (n > 0) {
+                //sending acks back to data packets
                 printRecv(&recvpkt);
+                cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
+                buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+                printSend(&ackpkt, 0);
+                sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
 
                 if (recvpkt.fin) {
                     cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
