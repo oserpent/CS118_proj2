@@ -10,6 +10,8 @@
 #include <fcntl.h>
 #include <netdb.h> 
 
+#include <stdbool.h>
+
 // =====================================
 
 #define RTO 500000 /* timeout in microseconds */
@@ -209,40 +211,75 @@ int main (int argc, char *argv[])
     //       handling data loss.
     //       Only for demo purpose. DO NOT USE IT in your final submission
 
-    while (1) {
+// CLIENT
+
+    seqNum = (seqNum + m) % MAX_SEQN;
+
+    while (1) {    
+    
         //pkt sending phase
         while (!feof(fp) && full == 0){
             m = fread(buf, 1, PAYLOAD_SIZE, fp);
-            seqNum = (seqNum + m) % MAX_SEQN;
             buildPkt(&pkts[e], seqNum, 0, 0, 0, 0, 0, m, buf);
-            sendto(sockfd, &pkts[e], m, 0, (struct sockaddr*) &servaddr, servaddrlen);
+            // printf("Payload: %s\n\n", &pkts[e].payload);
+            seqNum = (seqNum + m) % MAX_SEQN;
+            sendto(sockfd, &pkts[e], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
             printSend(&pkts[e], 0);
             e = (e + 1) % WND_SIZE;
             if (s == e){
                 full = 1;
             }
         }
-
+        
         //ack incoming packets next
         while (1){
             n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *) &servaddr, (socklen_t *) &servaddrlen);
-            printRecv(&ackpkt);
+            
             if (n > 0){
-                if (ackpkt.acknum == (pkts[s].seqnum + pkts[s].length) % MAX_SEQN){
-                    //free first pkt in window
-                    s = (s + 1) % WND_SIZE;
-                    full = 0;
-                    break;
+            		printRecv(&ackpkt);
+            		int i = s;
+            		bool flag0 = true;
+                bool flag1 = false;
+            		while (i != e || (flag0 && i == e)) {
+                		if (flag0 == true) {
+                    		flag0 = false;
+                    }
+                		if (ackpkt.acknum == (pkts[i].seqnum + pkts[i].length) % MAX_SEQN){
+                    		//free first pkt in window
+                    		s = (i + 1) % WND_SIZE;
+                    		full = 0;
+                    		timer = setTimer();
+                        flag1 = true;
+                    		break;
+                		}
+                    i = (i + 1) % WND_SIZE;
                 }
+                if (flag1) {
+                		break;
+                }
+            }
+            else if (isTimeout(timer)) {
+                printTimeout(&pkts[s]);
+            		int flag = full;
+            		int i = s;
+            		while (i != e || (flag == 1 && i == e)) {
+            				if (flag == 1){
+                				flag = 0;
+                		}
+            				printSend(&pkts[i], 1);
+            				sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);            		
+            				i = (i + 1) % WND_SIZE;
+            		}
+            		timer = setTimer();
             }
         }
         if (s == e && full == 0){
             break;
         }
 
-    }
+    }  
 
-    printf("%s\n", "after while");
+    // printf("%s\n", "after while");
 
     // *** End of your client implementation ***
     fclose(fp);

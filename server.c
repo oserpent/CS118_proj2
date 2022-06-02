@@ -8,6 +8,8 @@
 #include <sys/time.h>
 #include <fcntl.h>
 
+#include <stdbool.h>
+
 // =====================================
 
 #define RTO 500000 /* timeout in microseconds */
@@ -166,6 +168,7 @@ int main (int argc, char *argv[])
                         }
 
                         fwrite(ackpkt.payload, 1, ackpkt.length, fp);
+                        printf("%s\n\n", ackpkt.payload);
 
                         seqNum = ackpkt.acknum;
                         cliSeqNum = (ackpkt.seqnum + ackpkt.length) % MAX_SEQN;
@@ -203,14 +206,43 @@ int main (int argc, char *argv[])
         //       a single data packet, and then tears down the connection
         //       without handling data loss.
         //       Only for demo purpose. DO NOT USE IT in your final submission
-        struct packet recvpkt;
 
+        struct packet recvpkt;
+        
+				int si = 0;
+        int ei = 0;
+				int seen[WND_SIZE + 1];
+        for (int i = 0; i < WND_SIZE + 1; i++) {
+        		seen[i] = -1;
+    		}
+        
         while(1) {
             n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t *) &cliaddrlen);
             if (n > 0) {
                 //sending acks back to data packets
                 printRecv(&recvpkt);
-                cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
+                bool isDup = false;
+                bool flag = true;
+            		int i = si;
+            		while (i != ei || (flag && i == ei)) {
+            				if (flag == true){
+                			flag = false;
+                		}
+               			if ((recvpkt.seqnum + recvpkt.length) % MAX_SEQN == seen[i]) {
+                    		isDup = true;
+                        break;
+                    }
+            				i = (i + 1) % (WND_SIZE + 1);
+            		}
+                if (!isDup && cliSeqNum == recvpkt.seqnum) {
+                		fwrite(recvpkt.payload, 1, recvpkt.length, fp);
+                		cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
+                    seen[ei] = cliSeqNum;
+                    ei = (ei + 1) % (WND_SIZE + 1);
+                    if (si == ei) {
+                    		si = (si + 1) % (WND_SIZE + 1);
+                    }
+                }
                 buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                 printSend(&ackpkt, 0);
                 sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
@@ -226,6 +258,30 @@ int main (int argc, char *argv[])
                 }
             }
         }
+
+
+        // struct packet recvpkt;
+
+        // while(1) {
+        //     n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t *) &cliaddrlen);
+        //     if (n > 0) {
+        //         printRecv(&recvpkt);
+        //         if (recvpkt.fin) {
+        //             cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
+
+        //             buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+        //             printSend(&ackpkt, 0);
+        //             sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
+
+        //             break;
+        //         }
+        //         //sending acks back to data packets
+        //         cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
+        //         buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+        //         printSend(&ackpkt, 0);
+        //         sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
+        //     }
+        // }
 
         // *** End of your server implementation ***
 
