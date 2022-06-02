@@ -169,15 +169,15 @@ int main(int argc, char *argv[])
                 {
                     printf("_____________________________________________\n");
                     printRecv(&ackpkt);
-                    printf("whassup1\n");
-                    printf("ackpkt.seqnum: %d\n", ackpkt.seqnum);
-                    printf("cliSeqNum: %d\n", cliSeqNum);
-                    printf("ackpkt.acknum: %d\n", ackpkt.acknum);
-                    printf("synackseqnum: %d\n", (synackpkt.seqnum + 1) % MAX_SEQN);
-                    printf("ackpkt.ack: %d\n", ackpkt.ack);
-                    printf("ackpkt.dupack: %d\n", ackpkt.ack);
+                    // printf("whassup1\n");
+                    // printf("ackpkt.seqnum: %d\n", ackpkt.seqnum);
+                    // printf("cliSeqNum: %d\n", cliSeqNum);
+                    // printf("ackpkt.acknum: %d\n", ackpkt.acknum);
+                    // printf("synackseqnum: %d\n", (synackpkt.seqnum + 1) % MAX_SEQN);
+                    // printf("ackpkt.ack: %d\n", ackpkt.ack);
+                    // printf("ackpkt.dupack: %d\n", ackpkt.dupack);
                     // if statement signifies that connection is completed: server acknowledges client seq num and client acknowledges server seq num
-                    if (ackpkt.seqnum == cliSeqNum && ackpkt.ack && ackpkt.acknum == (synackpkt.seqnum + 1) % MAX_SEQN)
+                    if (ackpkt.seqnum == cliSeqNum && (ackpkt.ack || ackpkt.dupack) && ackpkt.acknum == (synackpkt.seqnum + 1) % MAX_SEQN)
                     {
                         printf("whassup2\n");
                         // length = length of i + 6 (".file" + nullbyte)
