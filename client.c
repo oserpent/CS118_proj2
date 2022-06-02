@@ -267,6 +267,8 @@ int main (int argc, char *argv[])
                 				flag = 0;
                 		}
             				printSend(&pkts[i], 1);
+                            printf("pkts[i].ack: %d\n", pkts[i].ack);
+                            printf("pkts[i].dupack: %d\n", pkts[i].dupack);
             				sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);            		
             				i = (i + 1) % WND_SIZE;
             		}
