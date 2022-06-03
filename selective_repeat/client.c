@@ -287,7 +287,7 @@ int main(int argc, char *argv[])
             buildPkt(&pkts[e], seqNum, 0, 0, 0, 0, 0, m, buf);
             seqNum = (seqNum + m) % MAX_SEQN;
             printSend(&pkts[e], 0);
-            sendto(sockfd, &pkts[e], m, 0, (struct sockaddr *)&servaddr, servaddrlen);
+            sendto(sockfd, &pkts[e], PKT_SIZE, 0, (struct sockaddr *)&servaddr, servaddrlen);
             acked[e] = false;
             timers[e] = setTimer();
             e = (e + 1) % WND_SIZE;

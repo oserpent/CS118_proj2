@@ -318,15 +318,19 @@ int main(int argc, char *argv[])
                     }
                     if (idx == s)
                     { // COMMENT: If it's not the first pkt that is received, then no need to do much more with regards to window. Else, do the following.
+                        printf("idx == s-----------");
                         bool flag = true;
                         int temp = getFirstNonRcvdIdx(s, e, &rcvd);
                         int i = s;
                         if (temp != -1)
                         { // COMMENT: First nonreceived pkt is within the window.
+                            printf("i: %d,  temp: %d\n", i, temp);
                             while (i != temp || (flag && i == temp))
                             { // DESCRIPTION: saves consecutively received pkts
                                 flag = false;
-                                fwrite(&pkts[i].payload, 1, &pkts[i].length, fp);
+                                printf("pkts[i].seqnum: %d\n", pkts[i].seqnum);
+                                fwrite(pkts[i].payload, 1, pkts[i].length, fp);
+                                // rcvd[i] = false;
                                 i = (i + 1) % WND_SIZE;
                             }
                             s = temp;
@@ -334,15 +338,19 @@ int main(int argc, char *argv[])
                         }
                         else
                         { // COMMENT: When s is the last pkt received and all other pkts have been received already.
+                            printf("i: %d,  temp: %d\n", i, temp);
                             while (i != e || (flag && i == e))
                             { // DESCRIPTION: saves consecutively received pkts
                                 flag = false;
-                                fwrite(&pkts[i].payload, 1, &pkts[i].length, fp);
+                                printf("pkts[i].seqnum: %d\n", pkts[i].seqnum);
+                                fwrite(pkts[i].payload, 1, pkts[i].length, fp);
+                                // rcvd[i] = false;
                                 i = (i + 1) % WND_SIZE;
                             }
                             s = e;
                             cliSeqNum = (cliSeqNum + WND_SIZE * PAYLOAD_SIZE) % MAX_SEQN; // COMMENT: Since all pkts in window have been received, cliSeqNum can advance by the entirety of the window.
                         }
+                        full = 0;
                     }
                 }
 
