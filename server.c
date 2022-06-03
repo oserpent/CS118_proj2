@@ -250,6 +250,17 @@ int main(int argc, char *argv[])
             {
                 // sending acks back to data packets
                 printRecv(&recvpkt);
+                if (recvpkt.fin)
+                {
+                    cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
+
+                    buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+                    printSend(&ackpkt, 0);
+                    sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+
+                    break;
+                }
+
                 bool isDup = false;
                 bool flag = true;
                 int i = si;
@@ -280,17 +291,6 @@ int main(int argc, char *argv[])
                 buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                 printSend(&ackpkt, 0);
                 sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
-
-                if (recvpkt.fin)
-                {
-                    cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
-
-                    buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
-                    printSend(&ackpkt, 0);
-                    sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
-
-                    break;
-                }
             }
         }
 

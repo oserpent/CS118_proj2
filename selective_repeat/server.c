@@ -270,7 +270,7 @@ int main(int argc, char *argv[])
 
         // COMMENT: Starting from here, insert code wherever appropriate in main.
 
-        cliSeqNum = (cliSeqNum + PAYLOAD_SIZE)% MAX_SEQN;
+        cliSeqNum = (cliSeqNum + PAYLOAD_SIZE) % MAX_SEQN;
 
         int full = 0;
         int s = 0;
@@ -305,12 +305,12 @@ int main(int argc, char *argv[])
             if (n > 0)
             {
                 printRecv(&recvpkt);
-                
+
                 if (recvpkt.fin)
                 {
                     // original server.c GBN: cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
                     // original server.c SR: cliSeqNum = (recvpkt.seqnum + 1) % MAX_SEQN;
-					cliSeqNum = recvpkt.seqnum % MAX_SEQN;
+                    cliSeqNum = recvpkt.seqnum % MAX_SEQN;
                     buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                     printSend(&ackpkt, 0);
                     sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
