@@ -229,7 +229,7 @@ int main(int argc, char *argv[])
                         fwrite(ackpkt.payload, 1, ackpkt.length, fp);
 
                         seqNum = ackpkt.acknum;
-                        cliSeqNum = (ackpkt.seqnum + ackpkt.length) % MAX_SEQN;
+                        cliSeqNum = ackpkt.seqnum % MAX_SEQN;
 
                         buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                         printSend(&ackpkt, 0);
@@ -270,6 +270,8 @@ int main(int argc, char *argv[])
 
         // COMMENT: Starting from here, insert code wherever appropriate in main.
 
+        cliSeqNum = (cliSeqNum + PAYLOAD_SIZE)% MAX_SEQN;
+
         int full = 0;
         int s = 0;
         int e = 0;
@@ -292,6 +294,7 @@ int main(int argc, char *argv[])
                 if (s == e)
                 {
                     full = 1;
+                    cliSeqNum = (cliSeqNum + PAYLOAD_SIZE * i) % MAX_SEQN;
                 }
             }
 
@@ -302,6 +305,17 @@ int main(int argc, char *argv[])
             if (n > 0)
             {
                 printRecv(&recvpkt);
+                
+                if (recvpkt.fin)
+                {
+                    // original server.c GBN: cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
+                    // original server.c SR: cliSeqNum = (recvpkt.seqnum + 1) % MAX_SEQN;
+					cliSeqNum = recvpkt.seqnum % MAX_SEQN;
+                    buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+                    printSend(&ackpkt, 0);
+                    sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+                    break;
+                }
 
                 // COMMENT: Regardless of whether pkt is within/without window or whether an ack for pkt has been sent already, an ack should be sent again in case it was lost.
                 buildPkt(&ackpkt, seqNum, recvpkt.seqnum, 0, 0, 1, 0, 0, NULL); // DOUBLE CHECK seqNum
@@ -334,7 +348,8 @@ int main(int argc, char *argv[])
                                 i = (i + 1) % WND_SIZE;
                             }
                             s = temp;
-                            cliSeqNum = wndSeqs[s]; // COMMENT: Given that pkt s is within the window and wndSeqs[s] represents the seq num expected at slot s, cliSeqNum should be just that.
+                            // cliSeqNum = (cliSeqNum + WND_SIZE * PAYLOAD_SIZE) % MAX_SEQN;
+                            // cliSeqNum = wndSeqs[s]; // COMMENT: Given that pkt s is within the window and wndSeqs[s] represents the seq num expected at slot s, cliSeqNum should be just that.
                         }
                         else
                         { // COMMENT: When s is the last pkt received and all other pkts have been received already.
@@ -348,21 +363,10 @@ int main(int argc, char *argv[])
                                 i = (i + 1) % WND_SIZE;
                             }
                             s = e;
-                            cliSeqNum = (cliSeqNum + WND_SIZE * PAYLOAD_SIZE) % MAX_SEQN; // COMMENT: Since all pkts in window have been received, cliSeqNum can advance by the entirety of the window.
+                            // cliSeqNum = (cliSeqNum + WND_SIZE * PAYLOAD_SIZE) % MAX_SEQN; // COMMENT: Since all pkts in window have been received, cliSeqNum can advance by the entirety of the window.
                         }
                         full = 0;
                     }
-                }
-
-                if (recvpkt.fin)
-                {
-                    cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
-
-                    buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
-                    printSend(&ackpkt, 0);
-                    sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
-
-                    break;
                 }
             }
         }
@@ -415,6 +419,7 @@ int main(int argc, char *argv[])
 
                 if (isTimeout(timer))
                 {
+                    printf("loopy\n");
                     printTimeout(&finpkt);
                     printSend(&finpkt, 1);
                     sendto(sockfd, &finpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
