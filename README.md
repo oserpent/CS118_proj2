@@ -1,16 +1,17 @@
-# CS118 Project 2
+# CS118 Project 2 Selective Repeat
 
-This is the repo for spring 2022 cs118 project 2.
+Authors: James Youn, Orrin Zhong
+Emails: jyoun0921@g.ucla.edu, uclaorrin@ucla.edu
+UIDs: 505399332, 605392655
 
-## Makefile
 
-This provides a couple make targets for things.
-By default (all target), it makes the `server` and `client` executables.
+## High-Level Design
 
-It provides a `clean` target, and `tarball` target to create the submission file as well.
+The client and server both adhere to the Selective Repeat Protocol. The client sends a SYN pkt to the server and once an ACK from the server is received, the client then sends the ACK-DATA pkt along with however many pkts are left in the window. From here, the server responds with an ACK message whenever it receives a payload from the client and updates its rcvd window accordingly. Whenever the client receives an ACK from the server, it updates the window if the pkt is the first element of window, and client proceeds to send more pkts given that the window size just shrunk. Both keep track of the ACKed and RCVd pkts.
 
-You will need to modify the `Makefile` USERID to add your userid for the `.tar.gz` turn-in at the top of the file.
+No additional libraries were used aside from boolean and the ones provided in the skeleton code.
 
-## Academic Integrity Note
 
-You are encouraged to host your code in private repositories on [GitHub](https://github.com/), [GitLab](https://gitlab.com), or other places.  At the same time, you are PROHIBITED to make your code for the class project public during the class or any time after the class.  If you do so, you will be violating academic honestly policy that you have signed, as well as the student code of conduct and be subject to serious sanctions.
+## Problems & Solutions
+
+The most time-consuming problem was keeping track of the expected sequence numbers on the server side. Since the server constantly maintains a Rcvd Wnd of a given size, it must check whether the pkt just received from the client is one that it's expecting. The circular buffer exacerbated this problem because the index of the buffer needs to correspond to the index of the array that contains the expected pkt seq nums. Eventually, this issue was handled by utilizing cliSeqNum and adding PAYLOAD_SIZE to this previous value everytime the window was enlarged. cliSeqNum was then updated as well so as to be consistent in the very next loop iteration.
