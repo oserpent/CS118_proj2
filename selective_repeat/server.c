@@ -310,7 +310,7 @@ int main(int argc, char *argv[])
                 {
                     // original server.c GBN: cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
                     // original server.c SR: cliSeqNum = (recvpkt.seqnum + 1) % MAX_SEQN;
-                    cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
+                    cliSeqNum = (recvpkt.seqnum + recvpkt.length + 1) % MAX_SEQN;
                     buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                     printSend(&ackpkt, 0);
                     sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
