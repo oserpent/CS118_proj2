@@ -109,7 +109,7 @@ int getAckedPktIdx(int s, int e, struct packet *ackpkt, struct packet *pkts)
     while (i != e || (flag && i == e))
     {
         flag = false;
-        if (ackpkt->acknum == pkts[i].seqnum)
+        if (ackpkt->acknum == pkts[i].seqnum + pkts[i].length)
         {
             return i;
         }

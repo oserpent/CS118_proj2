@@ -229,7 +229,7 @@ int main(int argc, char *argv[])
                         fwrite(ackpkt.payload, 1, ackpkt.length, fp);
 
                         seqNum = ackpkt.acknum;
-                        cliSeqNum = ackpkt.seqnum % MAX_SEQN;
+                        cliSeqNum = (ackpkt.seqnum + ackpkt.length) % MAX_SEQN;
 
                         buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                         printSend(&ackpkt, 0);
@@ -270,7 +270,7 @@ int main(int argc, char *argv[])
 
         // COMMENT: Starting from here, insert code wherever appropriate in main.
 
-        cliSeqNum = (cliSeqNum + PAYLOAD_SIZE) % MAX_SEQN;
+        // cliSeqNum = (cliSeqNum + PAYLOAD_SIZE) % MAX_SEQN;
 
         int full = 0;
         int s = 0;
@@ -310,7 +310,7 @@ int main(int argc, char *argv[])
                 {
                     // original server.c GBN: cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
                     // original server.c SR: cliSeqNum = (recvpkt.seqnum + 1) % MAX_SEQN;
-                    cliSeqNum = recvpkt.seqnum % MAX_SEQN;
+                    cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
                     buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                     printSend(&ackpkt, 0);
                     sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
@@ -318,7 +318,7 @@ int main(int argc, char *argv[])
                 }
 
                 // COMMENT: Regardless of whether pkt is within/without window or whether an ack for pkt has been sent already, an ack should be sent again in case it was lost.
-                buildPkt(&ackpkt, seqNum, recvpkt.seqnum, 0, 0, 1, 0, 0, NULL); // DOUBLE CHECK seqNum
+                buildPkt(&ackpkt, seqNum, (recvpkt.seqnum + recvpkt.length) % MAX_SEQN, 0, 0, 1, 0, 0, NULL); // DOUBLE CHECK seqNum
                 printSend(&ackpkt, 0);
                 sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
 
@@ -332,17 +332,14 @@ int main(int argc, char *argv[])
                     }
                     if (idx == s)
                     { // COMMENT: If it's not the first pkt that is received, then no need to do much more with regards to window. Else, do the following.
-                        printf("idx == s-----------");
                         bool flag = true;
                         int temp = getFirstNonRcvdIdx(s, e, &rcvd);
                         int i = s;
                         if (temp != -1)
                         { // COMMENT: First nonreceived pkt is within the window.
-                            printf("i: %d,  temp: %d\n", i, temp);
                             while (i != temp || (flag && i == temp))
                             { // DESCRIPTION: saves consecutively received pkts
                                 flag = false;
-                                printf("pkts[i].seqnum: %d\n", pkts[i].seqnum);
                                 fwrite(pkts[i].payload, 1, pkts[i].length, fp);
                                 // rcvd[i] = false;
                                 i = (i + 1) % WND_SIZE;
@@ -353,11 +350,9 @@ int main(int argc, char *argv[])
                         }
                         else
                         { // COMMENT: When s is the last pkt received and all other pkts have been received already.
-                            printf("i: %d,  temp: %d\n", i, temp);
                             while (i != e || (flag && i == e))
                             { // DESCRIPTION: saves consecutively received pkts
                                 flag = false;
-                                printf("pkts[i].seqnum: %d\n", pkts[i].seqnum);
                                 fwrite(pkts[i].payload, 1, pkts[i].length, fp);
                                 // rcvd[i] = false;
                                 i = (i + 1) % WND_SIZE;
