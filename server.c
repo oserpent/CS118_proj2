@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        unsigned short cliSeqNum = (synpkt.seqnum + 1) % MAX_SEQN; // next message from client should have this sequence number
+        unsigned short cliSeqNum = (synpkt.seqnum + 1) % MAX_SEQN;
 
         buildPkt(&synackpkt, seqNum, cliSeqNum, 1, 0, 1, 0, 0, NULL);
 
@@ -163,24 +163,12 @@ int main(int argc, char *argv[])
 
             while (1)
             {
-                // ackpacket is supposed response to synack
                 n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, (socklen_t *)&cliaddrlen);
                 if (n > 0)
                 {
-                    printf("_____________________________________________\n");
                     printRecv(&ackpkt);
-                    // printf("whassup1\n");
-                    // printf("ackpkt.seqnum: %d\n", ackpkt.seqnum);
-                    // printf("cliSeqNum: %d\n", cliSeqNum);
-                    // printf("ackpkt.acknum: %d\n", ackpkt.acknum);
-                    // printf("synackseqnum: %d\n", (synackpkt.seqnum + 1) % MAX_SEQN);
-                    // printf("ackpkt.ack: %d\n", ackpkt.ack);
-                    // printf("ackpkt.dupack: %d\n", ackpkt.dupack);
-                    // if statement signifies that connection is completed: server acknowledges client seq num and client acknowledges server seq num
                     if (ackpkt.seqnum == cliSeqNum && (ackpkt.ack || ackpkt.dupack) && ackpkt.acknum == (synackpkt.seqnum + 1) % MAX_SEQN)
                     {
-                        printf("whassup2\n");
-                        // length = length of i + 6 (".file" + nullbyte)
                         int length = snprintf(NULL, 0, "%d", i) + 6;
                         char *filename = malloc(length);
                         snprintf(filename, length, "%d.file", i);
@@ -201,26 +189,15 @@ int main(int argc, char *argv[])
                         buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                         printSend(&ackpkt, 0);
                         sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
-                        // breaks if ack to synack successfully received => handshake complete
                         break;
                     }
-                    // sending another synack in case of packet loss of original synack packet
                     else if (ackpkt.syn)
                     {
-                        // has dupack bit turned on
                         buildPkt(&synackpkt, seqNum, (synpkt.seqnum + 1) % MAX_SEQN, 1, 0, 0, 1, 0, NULL);
-                        // breaks after sending duplicate synack due to original synack packet loss
                         break;
                     }
                 }
             }
-            // this break is for the if condition of the inner while loop
-
-            // ackpkt.syn means that ackpkt is a syn and so ack to synack is not received
-            //! ackpkt.syn means that ackpkt is not a syn and so ack to synack is received
-            // if ack to synack is received, then break
-            // if ack to synack is not received, then continue outer loop
-            // outer loop means we send another synack
             if (!ackpkt.syn)
                 break;
         }
@@ -248,7 +225,6 @@ int main(int argc, char *argv[])
             n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, (socklen_t *)&cliaddrlen);
             if (n > 0)
             {
-                // sending acks back to data packets
                 printRecv(&recvpkt);
                 if (recvpkt.fin)
                 {
@@ -260,7 +236,6 @@ int main(int argc, char *argv[])
 
                     break;
                 }
-
                 bool isDup = false;
                 bool flag = true;
                 int i = si;
@@ -293,29 +268,6 @@ int main(int argc, char *argv[])
                 sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
             }
         }
-
-        // struct packet recvpkt;
-
-        // while(1) {
-        //     n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t *) &cliaddrlen);
-        //     if (n > 0) {
-        //         printRecv(&recvpkt);
-        //         if (recvpkt.fin) {
-        //             cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
-
-        //             buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
-        //             printSend(&ackpkt, 0);
-        //             sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
-
-        //             break;
-        //         }
-        //         //sending acks back to data packets
-        //         cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
-        //         buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
-        //         printSend(&ackpkt, 0);
-        //         sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
-        //     }
-        // }
 
         // *** End of your server implementation ***
 

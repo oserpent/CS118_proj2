@@ -227,19 +227,14 @@ int main(int argc, char *argv[])
     //       handling data loss.
     //       Only for demo purpose. DO NOT USE IT in your final submission
 
-    // CLIENT
-
     seqNum = (seqNum + m) % MAX_SEQN;
 
     while (1)
     {
-
-        // pkt sending phase
         while (!feof(fp) && full == 0)
         {
             m = fread(buf, 1, PAYLOAD_SIZE, fp);
             buildPkt(&pkts[e], seqNum, 0, 0, 0, 0, 0, m, buf);
-            // printf("Payload: %s\n\n", &pkts[e].payload);
             seqNum = (seqNum + m) % MAX_SEQN;
             sendto(sockfd, &pkts[e], PKT_SIZE, 0, (struct sockaddr *)&servaddr, servaddrlen);
             printSend(&pkts[e], 0);
@@ -250,7 +245,6 @@ int main(int argc, char *argv[])
             }
         }
 
-        // ack incoming packets next
         while (1)
         {
             n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&servaddr, (socklen_t *)&servaddrlen);
@@ -269,7 +263,6 @@ int main(int argc, char *argv[])
                     }
                     if (ackpkt.acknum == (pkts[i].seqnum + pkts[i].length) % MAX_SEQN)
                     {
-                        // free first pkt in window
                         s = (i + 1) % WND_SIZE;
                         full = 0;
                         timer = setTimer();
@@ -295,8 +288,6 @@ int main(int argc, char *argv[])
                         flag = 0;
                     }
                     printSend(&pkts[i], 1);
-                    // printf("pkts[i].ack: %d\n", pkts[i].ack);
-                    // printf("pkts[i].dupack: %d\n", pkts[i].dupack);
                     sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr *)&servaddr, servaddrlen);
                     i = (i + 1) % WND_SIZE;
                 }
@@ -308,8 +299,6 @@ int main(int argc, char *argv[])
             break;
         }
     }
-
-    // printf("%s\n", "after while");
 
     // *** End of your client implementation ***
     fclose(fp);

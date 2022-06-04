@@ -1,41 +1,444 @@
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Quisque convallis dapibus eros, nec scelerisque nisl faucibus ac. Nulla pharetra, risus tincidunt ullamcorper rutrum, justo nisl rhoncus mi, non blandit ligula dui in ligula. Fusce non tincidunt elit, non rhoncus nisl. Sed interdum mauris mi. Maecenas dui arcu, lobortis at faucibus eget, vulputate cursus risus. Vestibulum maximus laoreet ligula id pellentesque. Nulla facilisis vehicula dictum. Fusce pharetra odio metus, eu imperdiet leo suscipit elementum. Vestibulum non elit ac orci eleifend feugiat eu non sapien.
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <fcntl.h>
 
-Sed quis aliquet justo. Suspendisse eros eros, volutpat nec turpis ut, mollis rutrum arcu. Nullam pellentesque, nunc ut sagittis maximus, leo massa placerat orci, non dictum metus erat nec leo. Pellentesque dictum nec ante ac consectetur. Mauris aliquet dolor at bibendum tincidunt. Mauris bibendum efficitur est eget mollis. Praesent vulputate mi ut turpis consequat, eget elementum justo mattis. Proin imperdiet porttitor nibh, et dictum mi placerat aliquet. Vestibulum sit amet elit gravida, interdum dolor in, feugiat ex. Sed tristique lacus at eros cursus, nec rhoncus orci porta. Aliquam erat volutpat. Maecenas nisi dolor, accumsan et auctor vel, sagittis et urna. Nullam laoreet dolor vel mattis ornare. Morbi velit augue, posuere ac viverra eu, dictum posuere dui.
+#include <stdbool.h>
 
-Integer malesuada facilisis molestie. Praesent malesuada lectus vitae mauris congue venenatis. Praesent ultrices erat id ullamcorper pretium. Suspendisse potenti. Morbi dictum est vitae ipsum rhoncus dignissim. Vivamus auctor nec lorem et ultrices. Interdum et malesuada fames ac ante ipsum primis in faucibus. Proin ac efficitur lectus. Sed consectetur sed lorem id dapibus. Pellentesque at sollicitudin nunc, non sollicitudin ex. In hac habitasse platea dictumst. Nulla laoreet pellentesque augue ac hendrerit. Pellentesque eget auctor enim. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Donec vel orci finibus, luctus orci quis, mattis est.
+// =====================================
 
-Praesent vitae fringilla enim. Pellentesque imperdiet eros et imperdiet cursus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Quisque non erat et odio egestas vehicula eu cursus nibh. Fusce luctus sed neque vitae imperdiet. Proin et lorem leo. Sed orci nibh, placerat sed tempor ut, maximus at ex. Etiam vel suscipit nulla. Nulla venenatis efficitur porttitor. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer lorem quam, venenatis nec vulputate a, consequat pharetra ipsum.
+#define RTO 500000       /* timeout in microseconds */
+#define HDR_SIZE 12      /* header size*/
+#define PKT_SIZE 524     /* total packet size */
+#define PAYLOAD_SIZE 512 /* PKT_SIZE - HDR_SIZE */
+#define WND_SIZE 10      /* window size*/
+#define MAX_SEQN 25601   /* number of sequence numbers [0-25600] */
 
-Sed laoreet lacinia ligula ut molestie. Pellentesque euismod ex a sem malesuada, ac scelerisque leo gravida. Ut pretium lacus at pellentesque rutrum. Aliquam vel sem ullamcorper, semper neque id, interdum magna. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Ut id consequat mauris. Morbi quis ligula nisl. Donec convallis viverra augue, id varius sapien. Nulla eget viverra mauris, non mollis urna. Proin vel tempor nunc, in aliquam purus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Aliquam non rhoncus massa. Donec sollicitudin velit ut rhoncus sodales. Suspendisse potenti.
+// Packet Structure: Described in Section 2.1.1 of the spec. DO NOT CHANGE!
+struct packet
+{
+    unsigned short seqnum;
+    unsigned short acknum;
+    char syn;
+    char fin;
+    char ack;
+    char dupack;
+    unsigned int length;
+    char payload[PAYLOAD_SIZE];
+};
 
-Nunc blandit lectus sapien, quis malesuada nulla lobortis ultrices. Nulla molestie mollis tempor. Duis sed tellus eget metus placerat mattis non at turpis. Integer eu vestibulum nunc, a vestibulum mi. Suspendisse tincidunt tortor scelerisque ipsum imperdiet placerat. Suspendisse rutrum sem vestibulum turpis tempus tincidunt. Praesent sollicitudin, sapien euismod pulvinar fermentum, felis nunc lobortis felis, eget rhoncus tellus diam sed massa.
+// Printing Functions: Call them on receiving/sending/packet timeout according
+// Section 2.6 of the spec. The content is already conformant with the spec,
+// no need to change. Only call them at correct times.
+void printRecv(struct packet *pkt)
+{
+    printf("RECV %d %d%s%s%s\n", pkt->seqnum, pkt->acknum, pkt->syn ? " SYN" : "", pkt->fin ? " FIN" : "", (pkt->ack || pkt->dupack) ? " ACK" : "");
+}
 
-Maecenas tincidunt nunc vehicula feugiat ullamcorper. Pellentesque blandit cursus arcu sed tristique. Vestibulum imperdiet ac turpis a aliquet. Suspendisse magna dui, scelerisque quis elit id, euismod rutrum massa. Quisque pretium eros ut arcu sollicitudin, gravida volutpat nisi commodo. Nam efficitur arcu vel sem semper, in mattis arcu feugiat. Suspendisse fringilla posuere nibh, congue dapibus nibh porttitor non. Integer ut lacus id enim sagittis porttitor vel quis odio. Sed elementum mollis justo a hendrerit. Nunc neque leo, cursus ut eros sit amet, tristique facilisis erat. Aliquam convallis auctor magna, et commodo mi congue eu. Donec vehicula turpis nec nibh dapibus scelerisque.
+void printSend(struct packet *pkt, int resend)
+{
+    if (resend)
+        printf("RESEND %d %d%s%s%s\n", pkt->seqnum, pkt->acknum, pkt->syn ? " SYN" : "", pkt->fin ? " FIN" : "", pkt->ack ? " ACK" : "");
+    else
+        printf("SEND %d %d%s%s%s%s\n", pkt->seqnum, pkt->acknum, pkt->syn ? " SYN" : "", pkt->fin ? " FIN" : "", pkt->ack ? " ACK" : "", pkt->dupack ? " DUP-ACK" : "");
+}
 
-Vivamus ac rhoncus turpis. Nunc sodales arcu dignissim lectus volutpat, sed imperdiet est condimentum. Curabitur ultricies ex et lobortis rhoncus. Maecenas id diam massa. Donec velit dui, tempus eu tristique vel, consequat eu leo. Proin tincidunt dolor non urna maximus elementum. Pellentesque porttitor nibh dolor, dignissim tempor purus viverra ultricies. Vivamus elementum augue id erat vulputate cursus. Curabitur hendrerit dolor id ante tincidunt, id consectetur sapien dictum. Nam aliquam finibus risus eu porttitor. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae;
+void printTimeout(struct packet *pkt)
+{
+    printf("TIMEOUT %d\n", pkt->seqnum);
+}
 
-Sed imperdiet lectus sit amet lobortis mattis. Cras nec volutpat ligula. Duis ut sem libero. Integer porttitor odio sollicitudin, posuere ligula in, egestas libero. In hac habitasse platea dictumst. Nunc tellus diam, tincidunt quis tempus ut, vestibulum quis mauris. Cras lobortis ornare sapien, non mollis tellus feugiat vitae. Morbi ultrices turpis accumsan augue ornare pulvinar. Etiam vitae iaculis nunc. Phasellus vel semper dui. Sed tristique ligula nec magna tincidunt, in sodales ante vulputate. Phasellus et maximus nunc, scelerisque suscipit lectus. Nulla sed hendrerit nisi. Integer quis dictum libero.
+// Building a packet by filling the header and contents.
+// This function is provided to you and you can use it directly
+void buildPkt(struct packet *pkt, unsigned short seqnum, unsigned short acknum, char syn, char fin, char ack, char dupack, unsigned int length, const char *payload)
+{
+    pkt->seqnum = seqnum;
+    pkt->acknum = acknum;
+    pkt->syn = syn;
+    pkt->fin = fin;
+    pkt->ack = ack;
+    pkt->dupack = dupack;
+    pkt->length = length;
+    memcpy(pkt->payload, payload, length);
+}
 
-Sed sit amet orci lorem. Curabitur finibus rhoncus dignissim. Aenean ornare auctor sem. Donec consectetur vestibulum diam ut iaculis. Vivamus pellentesque purus purus, sit amet luctus mauris blandit et. Ut id nisi sit amet justo sollicitudin ultricies. Praesent erat velit, malesuada eget dignissim id, sodales quis sapien. Nulla facilisi. Proin elit dolor, volutpat at porttitor pharetra, egestas in ligula. Suspendisse potenti.
+// =====================================
 
-Sed quis tincidunt nulla. Praesent elementum scelerisque turpis vel aliquam. Fusce at rutrum odio, sit amet convallis ex. Nulla ullamcorper tristique luctus. Aenean vitae molestie enim, et lobortis libero. Praesent vitae malesuada lorem. Suspendisse at nibh non leo vulputate luctus. Duis a nisi erat. Aenean euismod, augue non luctus ullamcorper, tortor justo elementum lorem, at fermentum urna tortor at mauris. Mauris finibus massa id ex dignissim fermentum. Maecenas ornare id purus vitae feugiat. Proin tempor, leo eu lacinia pharetra, sapien lorem fermentum massa, eu consequat lorem lacus at elit.
+double setTimer()
+{
+    struct timeval e;
+    gettimeofday(&e, NULL);
+    return (double)e.tv_sec + (double)e.tv_usec / 1000000 + (double)RTO / 1000000;
+}
 
-Duis sodales id augue quis interdum. Phasellus venenatis consequat consectetur. Morbi id eleifend odio, ac tempor lorem. Integer sit amet malesuada nulla. Praesent hendrerit velit at leo interdum lobortis. Quisque in enim arcu. Integer eget lorem aliquet felis eleifend vestibulum.
+int isTimeout(double end)
+{
+    struct timeval s;
+    gettimeofday(&s, NULL);
+    double start = (double)s.tv_sec + (double)s.tv_usec / 1000000;
+    return ((end - start) < 0.0);
+}
 
-Vestibulum rutrum magna non lacinia imperdiet. Quisque urna tortor, imperdiet sit amet laoreet et, lacinia quis metus. Nulla tincidunt id felis sit amet condimentum. Fusce eget hendrerit nulla. Vestibulum luctus vestibulum augue, ac iaculis turpis accumsan non. Ut nec odio nulla. Mauris nisi magna, dictum id aliquet ac, blandit sed augue. Donec rutrum vehicula justo nec consectetur. Phasellus porta neque et dolor placerat, interdum gravida nisl condimentum. Cras metus mauris, finibus non suscipit vitae, bibendum et dui. Integer massa velit, consequat et arcu ut, molestie cursus dui. Sed ipsum neque, gravida nec volutpat vel, tincidunt quis nunc.
+// =====================================
 
-Suspendisse ornare arcu sed odio efficitur, sed sagittis velit euismod. Nulla feugiat, odio at ullamcorper elementum, nibh orci ultricies nisi, sit amet bibendum sapien tortor et neque. Aenean nec fermentum massa. Ut vel orci lacus. Duis mi tellus, posuere eget vulputate a, dignissim eget turpis. Suspendisse lacinia risus interdum erat pulvinar, eget eleifend libero viverra. In malesuada molestie nisl. In semper odio massa, vel feugiat sapien sagittis eget. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Integer sed magna vel eros dapibus ullamcorper sed nec ligula. Aliquam nisl orci, mollis ut ante id, imperdiet tempor sapien. Fusce suscipit massa a nisi scelerisque pellentesque. Cras vehicula tempus porta.
+// SERVER
 
-Cras eu tortor elit. Integer vitae nisl massa. Cras venenatis, urna a blandit consequat, massa neque ultricies nisl, eu suscipit lacus nulla a eros. Mauris molestie neque sit amet augue pulvinar, non tempor lectus eleifend. Donec vestibulum eu diam eget elementum. Curabitur urna nisl, tincidunt eget congue ac, euismod quis erat. Vivamus sit amet augue at dolor pulvinar vestibulum. Praesent lorem nisi, semper a tortor in, condimentum tempor enim. Nulla purus mauris, pulvinar sed tortor sed, mollis sodales dolor. Maecenas maximus nibh a neque dictum, vel eleifend nisl hendrerit. Donec ut orci eu turpis condimentum tincidunt. Praesent id mollis odio.
+// COMMENT: The two functions below belong outside the main.
 
-Ut luctus sem sit amet est congue feugiat. Morbi aliquam feugiat viverra. Nulla aliquam vulputate lectus nec aliquet. Pellentesque euismod dui enim, ac placerat massa facilisis scelerisque. Proin a magna ex. Sed egestas vestibulum neque, nec molestie ex accumsan id. Maecenas rhoncus, nisl nec ullamcorper volutpat, sem tellus semper risus, et pharetra nisl nisl sit amet sapien. Pellentesque convallis quis nunc vel semper. In vel mollis nisi, ac egestas felis. Cras vel tortor viverra, venenatis sapien et, fringilla mauris.
+// DESCRIPTION:
+// Checks whether the recvpkt is actually a pkt we're waiting for. I.e. Is it in window?
+// If so, returns the index that recvpkt should be stored in. Else, returns -1.
+// ANALYSIS: If -1 is returned, then recvpkt is outside the window and was already received.
+int getRcvdPktIdx(int s, int e, struct packet *recvpkt, int *wndSeqs)
+{
+    int i = s;
+    bool flag = true;
+    while (i != e || (flag && i == e))
+    {
+        flag = false;
+        if (recvpkt->seqnum == wndSeqs[i])
+        {
+            return i;
+        }
+        i = (i + 1) % WND_SIZE;
+    }
+    return -1;
+}
 
-Mauris consectetur eros nec vehicula condimentum. Ut convallis auctor vulputate. Nunc dapibus viverra massa. Sed pellentesque turpis nec leo aliquam, auctor fermentum erat gravida. Vestibulum vulputate bibendum enim, id elementum lorem faucibus sit amet. Nullam vitae suscipit massa, id auctor libero. Nulla eu dui vel sem vulputate blandit. Donec in velit blandit, mattis diam vel, mollis tortor. Praesent sed hendrerit turpis. Cras bibendum suscipit nunc nec sagittis. Integer sagittis pellentesque sodales. In nec elementum nibh, eu gravida lectus. Integer imperdiet vulputate quam vel accumsan. Curabitur consectetur tortor id pellentesque posuere.
+// DESCRIPTION: Returns the first index of the pkt that is not yet received. Else, returns -1.
+// ANALYSIS: If -1 is returned, then that means all pkts in window have been received. This probably means the pkt at s was the last to be received.
+int getFirstNonRcvdIdx(int s, int e, bool *rcvd)
+{
+    int i = s;
+    bool flag = true;
+    while (i != e || (flag && i == e))
+    {
+        flag = false;
+        if (!rcvd[i])
+        {
+            return i;
+        }
+        i = (i + 1) % WND_SIZE;
+    }
+    return -1;
+}
 
-Vivamus pulvinar vulputate orci non scelerisque. Curabitur vel lacus suscipit, venenatis sapien facilisis, tristique odio. Sed tempor mauris ut elit sodales, id ultricies eros tincidunt. Cras aliquam cursus gravida. Morbi quis malesuada lorem. Etiam sem arcu, dapibus sit amet urna ut, sodales semper tortor. Sed rhoncus justo non arcu commodo, ac rutrum libero luctus. Donec ut rutrum libero. Etiam ullamcorper arcu ligula, sed gravida urna commodo non.
+int main(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
+        perror("ERROR: incorrect number of arguments\n");
+        exit(1);
+    }
 
-Pellentesque tristique, ligula a mattis tempor, felis lorem rhoncus purus, a consequat massa orci quis sem. Mauris nulla eros, tincidunt sed tincidunt id, condimentum dictum purus. Etiam eleifend rhoncus ullamcorper. Nunc id lacinia mi. Sed eu placerat metus. Aenean accumsan, lectus id ultricies accumsan, nisl lacus egestas nisi, sit amet faucibus sem dui sed neque. Aliquam gravida in metus ac sollicitudin.
+    unsigned int servPort = atoi(argv[1]);
 
-Nulla eget ligula commodo, consectetur augue in, mattis turpis. Donec pharetra neque dictum egestas dignissim. Proin tempor, eros eu euismod imperdiet, magna nisl dictum ipsum, in rhoncus nulla nibh eget nisl. Sed quam nisi, vehicula non lectus at, tristique placerat dui. Praesent id nunc at erat aliquet placerat. Nam faucibus at ligula id rutrum. Proin id tortor ut enim molestie congue. Nunc sagittis nulla vitae euismod aliquet. Mauris interdum, massa sed aliquet lobortis, ante augue pretium magna, vel ultricies diam enim et leo. Ut condimentum diam a libero molestie venenatis. Curabitur eget ipsum in neque placerat finibus tristique quis leo. Maecenas at sem orci. Curabitur odio massa, hendrerit et velit eu, tristique pulvinar leo. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Cras feugiat eu quam vel blandit.
+    // =====================================
+    // Socket Setup
 
-Nullam eros velit, maximus sed ante in, iaculis congue ipsum. Donec eu tellus a ligula lacinia maximus nunc.
+    int sockfd;
+    struct sockaddr_in servaddr, cliaddr;
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(servPort);
+    memset(servaddr.sin_zero, '\0', sizeof(servaddr.sin_zero));
+
+    if (bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1)
+    {
+        perror("bind() error");
+        exit(1);
+    }
+
+    int cliaddrlen = sizeof(cliaddr);
+
+    // NOTE: We set the socket as non-blocking so that we can poll it until
+    //       timeout instead of getting stuck. This way is not particularly
+    //       efficient in real programs but considered acceptable in this
+    //       project.
+    //       Optionally, you could also consider adding a timeout to the socket
+    //       using setsockopt with SO_RCVTIMEO instead.
+    fcntl(sockfd, F_SETFL, O_NONBLOCK);
+
+    // =====================================
+
+    unsigned short seqNum = (rand() * rand()) % MAX_SEQN;
+
+    for (int i = 1;; i++)
+    {
+        // =====================================
+        // Establish Connection: This procedure is provided to you directly and
+        // is already working.
+
+        int n;
+
+        FILE *fp;
+
+        struct packet synpkt, synackpkt, ackpkt;
+
+        while (1)
+        {
+            n = recvfrom(sockfd, &synpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, (socklen_t *)&cliaddrlen);
+            if (n > 0)
+            {
+                printRecv(&synpkt);
+                if (synpkt.syn)
+                    break;
+            }
+        }
+
+        unsigned short cliSeqNum = (synpkt.seqnum + 1) % MAX_SEQN; // next message from client should have this sequence number
+
+        buildPkt(&synackpkt, seqNum, cliSeqNum, 1, 0, 1, 0, 0, NULL);
+
+        while (1)
+        {
+            printSend(&synackpkt, 0);
+            sendto(sockfd, &synackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+
+            while (1)
+            {
+                // ackpacket is supposed response to synack
+                n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, (socklen_t *)&cliaddrlen);
+                if (n > 0)
+                {
+                    printRecv(&ackpkt);
+                    // if statement signifies that connection is completed: server acknowledges client seq num and client acknowledges server seq num
+                    if (ackpkt.seqnum == cliSeqNum && (ackpkt.ack || ackpkt.dupack) && ackpkt.acknum == (synackpkt.seqnum + 1) % MAX_SEQN)
+                    {
+                        // length = length of i + 6 (".file" + nullbyte)
+                        int length = snprintf(NULL, 0, "%d", i) + 6;
+                        char *filename = malloc(length);
+                        snprintf(filename, length, "%d.file", i);
+
+                        fp = fopen(filename, "w");
+                        free(filename);
+                        if (fp == NULL)
+                        {
+                            perror("ERROR: File could not be created\n");
+                            exit(1);
+                        }
+
+                        fwrite(ackpkt.payload, 1, ackpkt.length, fp);
+
+                        seqNum = ackpkt.acknum;
+                        cliSeqNum = (ackpkt.seqnum + ackpkt.length) % MAX_SEQN;
+
+                        buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+                        printSend(&ackpkt, 0);
+                        sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+                        // breaks if ack to synack successfully received => handshake complete
+                        break;
+                    }
+                    // sending another synack in case of packet loss of original synack packet
+                    else if (ackpkt.syn)
+                    {
+                        // has dupack bit turned on
+                        buildPkt(&synackpkt, seqNum, (synpkt.seqnum + 1) % MAX_SEQN, 1, 0, 0, 1, 0, NULL);
+                        // breaks after sending duplicate synack due to original synack packet loss
+                        break;
+                    }
+                }
+            }
+            // this break is for the if condition of the inner while loop
+
+            // ackpkt.syn means that ackpkt is a syn and so ack to synack is not received
+            //! ackpkt.syn means that ackpkt is not a syn and so ack to synack is received
+            // if ack to synack is received, then break
+            // if ack to synack is not received, then continue outer loop
+            // outer loop means we send another synack
+            if (!ackpkt.syn)
+                break;
+        }
+
+        // *** TODO: Implement the rest of reliable transfer in the server ***
+        // Implement GBN for basic requirement or Selective Repeat to receive bonus
+
+        // Note: the following code is not the complete logic. It only expects
+        //       a single data packet, and then tears down the connection
+        //       without handling data loss.
+        //       Only for demo purpose. DO NOT USE IT in your final submission
+
+        struct packet recvpkt;
+
+        // COMMENT: Starting from here, insert code wherever appropriate in main.
+
+        // cliSeqNum = (cliSeqNum + PAYLOAD_SIZE) % MAX_SEQN;
+
+        int full = 0;
+        int s = 0;
+        int e = 0;
+        struct packet pkts[WND_SIZE];
+        int wndSeqs[WND_SIZE]; // DESCRIPTION: Stores the pkt seq nums we're expecting to receive.
+        bool rcvd[WND_SIZE];
+
+        while (1)
+        {
+
+            // DESCRIPTION: INCREASE WINDOW SIZE PHASE
+
+            int i = 0;
+            while (full == 0)
+            {
+                rcvd[e] = false;
+                wndSeqs[e] = (cliSeqNum + PAYLOAD_SIZE * i) % MAX_SEQN; // Q: IT'S PAYLOAD_SIZE RIGHT? NOT PKT_SIZE?
+                i++;
+                e = (e + 1) % WND_SIZE;
+                if (s == e)
+                {
+                    full = 1;
+                    cliSeqNum = (cliSeqNum + PAYLOAD_SIZE * i) % MAX_SEQN;
+                }
+            }
+
+            // DESCRIPTION: RECEIVE PKTS PHASE
+
+            n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, (socklen_t *)&cliaddrlen);
+
+            if (n > 0)
+            {
+                printRecv(&recvpkt);
+
+                if (recvpkt.fin)
+                {
+                    // original server.c GBN: cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
+                    // original server.c SR: cliSeqNum = (recvpkt.seqnum + 1) % MAX_SEQN;
+                    cliSeqNum = (recvpkt.seqnum + recvpkt.length + 1) % MAX_SEQN;
+                    buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+                    printSend(&ackpkt, 0);
+                    sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+                    break;
+                }
+
+                // COMMENT: Regardless of whether pkt is within/without window or whether an ack for pkt has been sent already, an ack should be sent again in case it was lost.
+                buildPkt(&ackpkt, seqNum, (recvpkt.seqnum + recvpkt.length) % MAX_SEQN, 0, 0, 1, 0, 0, NULL); // DOUBLE CHECK seqNum
+                printSend(&ackpkt, 0);
+                sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+
+                int idx = getRcvdPktIdx(s, e, &recvpkt, &wndSeqs);
+                if (idx >= 0)
+                {
+                    if (!rcvd[idx])
+                    {
+                        pkts[idx] = recvpkt;
+                        rcvd[idx] = true;
+                    }
+                    if (idx == s)
+                    { // COMMENT: If it's not the first pkt that is received, then no need to do much more with regards to window. Else, do the following.
+                        bool flag = true;
+                        int temp = getFirstNonRcvdIdx(s, e, &rcvd);
+                        int i = s;
+                        if (temp != -1)
+                        { // COMMENT: First nonreceived pkt is within the window.
+                            while (i != temp || (flag && i == temp))
+                            { // DESCRIPTION: saves consecutively received pkts
+                                flag = false;
+                                fwrite(pkts[i].payload, 1, pkts[i].length, fp);
+                                // rcvd[i] = false;
+                                i = (i + 1) % WND_SIZE;
+                            }
+                            s = temp;
+                            // cliSeqNum = (cliSeqNum + WND_SIZE * PAYLOAD_SIZE) % MAX_SEQN;
+                            // cliSeqNum = wndSeqs[s]; // COMMENT: Given that pkt s is within the window and wndSeqs[s] represents the seq num expected at slot s, cliSeqNum should be just that.
+                        }
+                        else
+                        { // COMMENT: When s is the last pkt received and all other pkts have been received already.
+                            while (i != e || (flag && i == e))
+                            { // DESCRIPTION: saves consecutively received pkts
+                                flag = false;
+                                fwrite(pkts[i].payload, 1, pkts[i].length, fp);
+                                // rcvd[i] = false;
+                                i = (i + 1) % WND_SIZE;
+                            }
+                            s = e;
+                            // cliSeqNum = (cliSeqNum + WND_SIZE * PAYLOAD_SIZE) % MAX_SEQN; // COMMENT: Since all pkts in window have been received, cliSeqNum can advance by the entirety of the window.
+                        }
+                        full = 0;
+                    }
+                }
+            }
+        }
+
+        // struct packet recvpkt;
+
+        // while(1) {
+        //     n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t *) &cliaddrlen);
+        //     if (n > 0) {
+        //         printRecv(&recvpkt);
+        //         if (recvpkt.fin) {
+        //             cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
+
+        //             buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+        //             printSend(&ackpkt, 0);
+        //             sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
+
+        //             break;
+        //         }
+        //         //sending acks back to data packets
+        //         cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
+        //         buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+        //         printSend(&ackpkt, 0);
+        //         sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
+        //     }
+        // }
+
+        // *** End of your server implementation ***
+
+        fclose(fp);
+        // =====================================
+        // Connection Teardown: This procedure is provided to you directly and
+        // is already working.
+
+        struct packet finpkt, lastackpkt;
+        buildPkt(&finpkt, seqNum, 0, 0, 1, 0, 0, 0, NULL);
+        buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 0, 1, 0, NULL);
+
+        printSend(&finpkt, 0);
+        sendto(sockfd, &finpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+        double timer = setTimer();
+
+        while (1)
+        {
+            while (1)
+            {
+                n = recvfrom(sockfd, &lastackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, (socklen_t *)&cliaddrlen);
+                if (n > 0)
+                    break;
+
+                if (isTimeout(timer))
+                {
+                    printf("loopy\n");
+                    printTimeout(&finpkt);
+                    printSend(&finpkt, 1);
+                    sendto(sockfd, &finpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+                    timer = setTimer();
+                }
+            }
+
+            printRecv(&lastackpkt);
+            if (lastackpkt.fin)
+            {
+
+                printSend(&ackpkt, 0);
+                sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+
+                printSend(&finpkt, 1);
+                sendto(sockfd, &finpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+                timer = setTimer();
+
+                continue;
+            }
+            if ((lastackpkt.ack || lastackpkt.dupack) && lastackpkt.acknum == (finpkt.seqnum + 1) % MAX_SEQN)
+                break;
+        }
+
+        seqNum = lastackpkt.acknum;
+    }
+}

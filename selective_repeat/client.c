@@ -96,10 +96,6 @@ int isTimeout(double end)
 
 // =====================================
 
-// CLIENT
-
-// COMMENT: The two functions below belong outside the main.
-
 // DESCRIPTION: Returns the index of the pkt (in pkts) that was acked by ackpkt. Else, returns -1.
 // ANALYSIS: If -1 is returned, then ackpkt acked a pkt outside the window. Since, such a pkt must have already been acked, no action is needed.
 int getAckedPktIdx(int s, int e, struct packet *ackpkt, struct packet *pkts)
@@ -267,20 +263,13 @@ int main(int argc, char *argv[])
     //       handling data loss.
     //       Only for demo purpose. DO NOT USE IT in your final submission
 
-    // CLIENT
-
     seqNum = (seqNum + m) % MAX_SEQN;
-
-    // COMMENT: Starting from here, insert code wherever appropriate in main.
 
     bool acked[WND_SIZE];
     double timers[WND_SIZE];
 
     while (1)
     {
-
-        // DESCRIPTION: PKT SENDING PHASE
-
         while (!feof(fp) && full == 0)
         {
             m = fread(buf, 1, PAYLOAD_SIZE, fp);
@@ -297,35 +286,31 @@ int main(int argc, char *argv[])
             }
         }
 
-        // DESCRIPTION: ACK RECEIVING PHASE
-
         n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&servaddr, (socklen_t *)&servaddrlen);
 
         if (n > 0)
         {
             printRecv(&ackpkt);
-            int idx = getAckedPktIdx(s, e, &ackpkt, &pkts);
+            int idx = getAckedPktIdx(s, e, &ackpkt, pkts);
 
             if (idx >= 0)
-            { // COMMENT: idx < 0: no action needed.
+            {
                 acked[idx] = true;
                 if (idx == s)
-                { // COMMENT: If the first pkt in window is acked, then do the rest. Else, no other action needed.
-                    int temp = getFirstNonAckedIdx(s, e, &acked);
+                {
+                    int temp = getFirstNonAckedIdx(s, e, acked);
                     if (temp != -1)
                     {
                         s = temp;
                     }
                     else
-                    { // COMMENT: All pkts have been acked. Probably means pkt s is last one in window to be acked.
+                    {
                         s = e;
                     }
                     full = 0;
                 }
             }
         }
-
-        // DESCRIPTION: PKTS TIMING OUT PHASE
 
         int i = s;
         bool flag = true;
@@ -342,19 +327,11 @@ int main(int argc, char *argv[])
             i = (i + 1) % WND_SIZE;
         }
 
-        // DESCRIPTION: BRO, WE DONE SENDING? PHASE
-        // ANALYSIS:
-        // If feof(fp) were not there, then s == e && full == 0 can be true if pkt s was the last one to be acked, even though there is more to be read from file.
-        // If s == e were not there, then feof(fp) && full == 0 can be true if there are less than WND_SIZE pkts to be sent. In this case, the loop will be exited without waiting for acks.
-        // If full == 0 were not there, then we can't differentiate whether s == e means completely full or completely empty.
-
         if (feof(fp) && s == e && full == 0)
         {
             break;
         }
     }
-
-    // printf("%s\n", "after while");
 
     // *** End of your client implementation ***
     fclose(fp);
