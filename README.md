@@ -1,8 +1,8 @@
 # CS118 Project 2 Selective Repeat
 
-Authors: James Youn, Orrin Zhong
-Emails: jyoun0921@g.ucla.edu, uclaorrin@ucla.edu
-UIDs: 505399332, 605392655
+Authors: James Youn, Orrin Zhong</br>
+Emails: jyoun0921@g.ucla.edu, uclaorrin@ucla.edu</br>
+UIDs: 505399332, 605392655</br>
 
 
 ## High-Level Design
