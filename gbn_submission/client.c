@@ -1,3 +1,5 @@
+//GO-BACK-N
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -95,42 +97,6 @@ int isTimeout(double end)
 }
 
 // =====================================
-
-// DESCRIPTION: Returns the index of the pkt (in pkts) that was acked by ackpkt. Else, returns -1.
-// ANALYSIS: If -1 is returned, then ackpkt acked a pkt outside the window. Since, such a pkt must have already been acked, no action is needed.
-int getAckedPktIdx(int s, int e, struct packet *ackpkt, struct packet *pkts)
-{
-    int i = s;
-    bool flag = true;
-    while (i != e || (flag && i == e))
-    {
-        flag = false;
-        if (ackpkt->acknum == (pkts[i].seqnum + pkts[i].length) % MAX_SEQN)
-        {
-            return i;
-        }
-        i = (i + 1) % WND_SIZE;
-    }
-    return -1;
-}
-
-// DESCRIPTION: Returns the first index of the pkt that is not yet acked. Else, returns -1.
-// ANALYSIS: If -1 is returned, then that means all pkts in window have been acked. This probably means the pkt at s was the last to be acked.
-int getFirstNonAckedIdx(int s, int e, bool *acked)
-{
-    int i = s;
-    bool flag = true;
-    while (i != e || (flag && i == e))
-    {
-        flag = false;
-        if (!acked[i])
-        {
-            return i;
-        }
-        i = (i + 1) % WND_SIZE;
-    }
-    return -1;
-}
 
 int main(int argc, char *argv[])
 {
@@ -265,9 +231,6 @@ int main(int argc, char *argv[])
 
     seqNum = (seqNum + m) % MAX_SEQN;
 
-    bool acked[WND_SIZE];
-    double timers[WND_SIZE];
-
     while (1)
     {
         while (!feof(fp) && full == 0)
@@ -275,10 +238,8 @@ int main(int argc, char *argv[])
             m = fread(buf, 1, PAYLOAD_SIZE, fp);
             buildPkt(&pkts[e], seqNum, 0, 0, 0, 0, 0, m, buf);
             seqNum = (seqNum + m) % MAX_SEQN;
-            printSend(&pkts[e], 0);
             sendto(sockfd, &pkts[e], PKT_SIZE, 0, (struct sockaddr *)&servaddr, servaddrlen);
-            acked[e] = false;
-            timers[e] = setTimer();
+            printSend(&pkts[e], 0);
             e = (e + 1) % WND_SIZE;
             if (s == e)
             {
@@ -286,48 +247,56 @@ int main(int argc, char *argv[])
             }
         }
 
-        n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&servaddr, (socklen_t *)&servaddrlen);
-
-        if (n > 0)
+        while (1)
         {
-            printRecv(&ackpkt);
-            int idx = getAckedPktIdx(s, e, &ackpkt, pkts);
+            n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&servaddr, (socklen_t *)&servaddrlen);
 
-            if (idx >= 0)
+            if (n > 0)
             {
-                acked[idx] = true;
-                if (idx == s)
+                printRecv(&ackpkt);
+                int i = s;
+                bool flag0 = true;
+                bool flag1 = false;
+                while (i != e || (flag0 && i == e))
                 {
-                    int temp = getFirstNonAckedIdx(s, e, acked);
-                    if (temp != -1)
+                    if (flag0 == true)
                     {
-                        s = temp;
+                        flag0 = false;
                     }
-                    else
+                    if (ackpkt.acknum == (pkts[i].seqnum + pkts[i].length) % MAX_SEQN)
                     {
-                        s = e;
+                        s = (i + 1) % WND_SIZE;
+                        full = 0;
+                        timer = setTimer();
+                        flag1 = true;
+                        break;
                     }
-                    full = 0;
+                    i = (i + 1) % WND_SIZE;
+                }
+                if (flag1)
+                {
+                    break;
                 }
             }
-        }
-
-        int i = s;
-        bool flag = true;
-        while (i != e || (flag && i == e))
-        {
-            flag = false;
-            if (!acked[i] && isTimeout(timers[i]))
+            else if (isTimeout(timer))
             {
-                printTimeout(&pkts[i]);
-                printSend(&pkts[i], 1);
-                sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr *)&servaddr, servaddrlen);
-                timers[i] = setTimer();
+                printTimeout(&pkts[s]);
+                int flag = full;
+                int i = s;
+                while (i != e || (flag == 1 && i == e))
+                {
+                    if (flag == 1)
+                    {
+                        flag = 0;
+                    }
+                    printSend(&pkts[i], 1);
+                    sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr *)&servaddr, servaddrlen);
+                    i = (i + 1) % WND_SIZE;
+                }
+                timer = setTimer();
             }
-            i = (i + 1) % WND_SIZE;
         }
-
-        if (feof(fp) && s == e && full == 0)
+        if (s == e && full == 0)
         {
             break;
         }

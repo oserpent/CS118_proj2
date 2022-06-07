@@ -1,4 +1,4 @@
-//SELECTIVE-REPEAT
+//GO-BACK-N
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -87,44 +87,6 @@ int isTimeout(double end)
 }
 
 // =====================================
-
-// DESCRIPTION:
-// Checks whether the recvpkt is actually a pkt we're waiting for. I.e. Is it in window?
-// If so, returns the index that recvpkt should be stored in. Else, returns -1.
-// ANALYSIS: If -1 is returned, then recvpkt is outside the window and was already received.
-int getRcvdPktIdx(int s, int e, struct packet *recvpkt, int *wndSeqs)
-{
-    int i = s;
-    bool flag = true;
-    while (i != e || (flag && i == e))
-    {
-        flag = false;
-        if (recvpkt->seqnum == wndSeqs[i])
-        {
-            return i;
-        }
-        i = (i + 1) % WND_SIZE;
-    }
-    return -1;
-}
-
-// DESCRIPTION: Returns the first index of the pkt that is not yet received. Else, returns -1.
-// ANALYSIS: If -1 is returned, then that means all pkts in window have been received. This probably means the pkt at s was the last to be received.
-int getFirstNonRcvdIdx(int s, int e, bool *rcvd)
-{
-    int i = s;
-    bool flag = true;
-    while (i != e || (flag && i == e))
-    {
-        flag = false;
-        if (!rcvd[i])
-        {
-            return i;
-        }
-        i = (i + 1) % WND_SIZE;
-    }
-    return -1;
-}
 
 int main(int argc, char *argv[])
 {
@@ -231,7 +193,6 @@ int main(int argc, char *argv[])
                         sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
                         break;
                     }
-
                     else if (ackpkt.syn)
                     {
                         buildPkt(&synackpkt, seqNum, (synpkt.seqnum + 1) % MAX_SEQN, 1, 0, 0, 1, 0, NULL);
@@ -239,7 +200,6 @@ int main(int argc, char *argv[])
                     }
                 }
             }
-
             if (!ackpkt.syn)
                 break;
         }
@@ -254,84 +214,60 @@ int main(int argc, char *argv[])
 
         struct packet recvpkt;
 
-        int full = 0;
-        int s = 0;
-        int e = 0;
-        struct packet pkts[WND_SIZE];
-        int wndSeqs[WND_SIZE];
-        bool rcvd[WND_SIZE];
+        int si = 0;
+        int ei = 0;
+        int seen[WND_SIZE + 1];
+        for (int i = 0; i < WND_SIZE + 1; i++)
+        {
+            seen[i] = -1;
+        }
 
         while (1)
         {
-            int i = 0;
-            while (full == 0)
-            {
-                rcvd[e] = false;
-                wndSeqs[e] = (cliSeqNum + PAYLOAD_SIZE * i) % MAX_SEQN;
-                i++;
-                e = (e + 1) % WND_SIZE;
-                if (s == e)
-                {
-                    full = 1;
-                    cliSeqNum = (cliSeqNum + PAYLOAD_SIZE * i) % MAX_SEQN;
-                }
-            }
-
             n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, (socklen_t *)&cliaddrlen);
-
             if (n > 0)
             {
                 printRecv(&recvpkt);
-
                 if (recvpkt.fin)
                 {
-                    cliSeqNum = (recvpkt.seqnum + recvpkt.length + 1) % MAX_SEQN;
+                    cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
+
                     buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                     printSend(&ackpkt, 0);
                     sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
+
                     break;
                 }
-
-                buildPkt(&ackpkt, seqNum, (recvpkt.seqnum + recvpkt.length) % MAX_SEQN, 0, 0, 1, 0, 0, NULL); // DOUBLE CHECK seqNum
-                printSend(&ackpkt, 0);
-                sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
-
-                int idx = getRcvdPktIdx(s, e, &recvpkt, wndSeqs);
-                if (idx >= 0)
+                bool isDup = false;
+                bool flag = true;
+                int i = si;
+                while (i != ei || (flag && i == ei))
                 {
-                    if (!rcvd[idx])
+                    if (flag == true)
                     {
-                        pkts[idx] = recvpkt;
-                        rcvd[idx] = true;
+                        flag = false;
                     }
-                    if (idx == s)
+                    if ((recvpkt.seqnum + recvpkt.length) % MAX_SEQN == seen[i])
                     {
-                        bool flag = true;
-                        int temp = getFirstNonRcvdIdx(s, e, rcvd);
-                        int i = s;
-                        if (temp != -1)
-                        {
-                            while (i != temp || (flag && i == temp))
-                            {
-                                flag = false;
-                                fwrite(pkts[i].payload, 1, pkts[i].length, fp);
-                                i = (i + 1) % WND_SIZE;
-                            }
-                            s = temp;
-                        }
-                        else
-                        {
-                            while (i != e || (flag && i == e))
-                            {
-                                flag = false;
-                                fwrite(pkts[i].payload, 1, pkts[i].length, fp);
-                                i = (i + 1) % WND_SIZE;
-                            }
-                            s = e;
-                        }
-                        full = 0;
+                        isDup = true;
+                        break;
+                    }
+                    i = (i + 1) % (WND_SIZE + 1);
+                }
+                if (!isDup && cliSeqNum == recvpkt.seqnum)
+                {
+                    fwrite(recvpkt.payload, 1, recvpkt.length, fp);
+                    cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
+                    seen[ei] = cliSeqNum;
+                    ei = (ei + 1) % (WND_SIZE + 1);
+                    if (si == ei)
+                    {
+                        si = (si + 1) % (WND_SIZE + 1);
                     }
                 }
+                buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+                printSend(&ackpkt, 0);
+                sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
             }
         }
 
@@ -360,7 +296,6 @@ int main(int argc, char *argv[])
 
                 if (isTimeout(timer))
                 {
-                    printf("loopy\n");
                     printTimeout(&finpkt);
                     printSend(&finpkt, 1);
                     sendto(sockfd, &finpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);

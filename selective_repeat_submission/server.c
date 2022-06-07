@@ -1,5 +1,3 @@
-//SELECTIVE-REPEAT
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -360,7 +358,6 @@ int main(int argc, char *argv[])
 
                 if (isTimeout(timer))
                 {
-                    printf("loopy\n");
                     printTimeout(&finpkt);
                     printSend(&finpkt, 1);
                     sendto(sockfd, &finpkt, PKT_SIZE, 0, (struct sockaddr *)&cliaddr, cliaddrlen);
